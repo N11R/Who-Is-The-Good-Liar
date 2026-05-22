@@ -2,8 +2,8 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const roomManager = require('./roomManager');
-const gameEngine = require('./gameEngine');
+const roomManager = require('./roommanager');
+const gameEngine = require('./gameengine');
 
 const app = express();
 const httpServer = createServer(app);
@@ -13,7 +13,7 @@ const io = new Server(httpServer, {
 
 // ─── Serve frontend ───────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.get('*', (_req, res) => {
+app.get('/{*path}', (_req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 

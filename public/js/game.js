@@ -598,3 +598,318 @@ function resetState() {
     state.myVote = null;
     state.isBeingEvaluated = false;
 }
+
+
+
+
+    // ─── BUTTON WIRING — add this at the bottom of game.js ───────────────────────
+    window.addEventListener('DOMContentLoaded', () => {
+
+        // Landing
+        document.getElementById('btn-new-game')
+            ?.addEventListener('click', () => showScreen('screen-setup'));
+
+        document.getElementById('btn-join-game')
+            ?.addEventListener('click', () => {
+                document.getElementById('join-form').classList.remove('hidden');
+                document.getElementById('btn-join-game').style.display = 'none';
+                document.getElementById('btn-new-game').style.display = 'none';
+            });
+
+        document.getElementById('btn-join-back')
+            ?.addEventListener('click', () => {
+                document.getElementById('join-form').classList.add('hidden');
+                document.getElementById('btn-join-game').style.display = '';
+                document.getElementById('btn-new-game').style.display = '';
+            });
+
+        document.getElementById('btn-setup-back')
+            ?.addEventListener('click', () => showScreen('screen-landing'));
+
+        // Setup — enable Create Game when name is filled
+        document.getElementById('host-name')
+            ?.addEventListener('input', function() {
+                document.getElementById('btn-create-game').disabled = !this.value.trim();
+            });
+
+        // Setup — chip selectors
+        document.querySelectorAll('.chip-select').forEach(group => {
+            group.querySelectorAll('.chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    group.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+                    chip.classList.add('selected');
+                });
+            });
+        });
+
+        // Setup — timer slider label
+        document.getElementById('timer-slider')
+            ?.addEventListener('input', function() {
+                document.getElementById('timer-value').textContent = `${this.value} min`;
+            });
+
+        // Setup — Create Game button
+        document.getElementById('btn-create-game')
+            ?.addEventListener('click', () => {
+                const name = document.getElementById('host-name').value.trim();
+                if (!name) return;
+
+                const playerCount = parseInt(
+                    document.querySelector('#select-players .chip.selected')?.dataset.value
+                ) || 4;
+                const round1Count = parseInt(
+                    document.querySelector('#select-r1-questions .chip.selected')?.dataset.value
+                ) || 7;
+                const round2Count = parseInt(
+                    document.querySelector('#select-r2-questions .chip.selected')?.dataset.value
+                ) || 4;
+                const timerMinutes = parseInt(
+                    document.getElementById('timer-slider').value
+                ) || 5;
+
+                state.playerName = name;
+                state.socket.emit('create-room', {
+                    name,
+                    settings: { playerCount, round1Questions: round1Count, round2Questions: round2Count, timerMinutes }
+                });
+            });
+
+        // Join — enable Join button when name + code filled
+        ['join-name', 'join-code'].forEach(id => {
+            document.getElementById(id)?.addEventListener('input', () => {
+                const name = document.getElementById('join-name').value.trim();
+                const code = document.getElementById('join-code').value.trim();
+                document.getElementById('btn-join-submit').disabled = !(name && code.length === 4);
+            });
+        });
+
+        document.getElementById('join-code')
+            ?.addEventListener('input', function() {
+                this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+            });
+
+        // Join — submit
+        document.getElementById('btn-join-submit')
+            ?.addEventListener('click', () => {
+                const name = document.getElementById('join-name').value.trim();
+                const code = document.getElementById('join-code').value.trim().toUpperCase();
+                if (!name || code.length !== 4) return;
+                state.playerName = name;
+                state.socket.emit('join-room', { name, code });
+            });
+
+        // Lobby — copy link
+        document.getElementById('btn-copy-link')
+            ?.addEventListener('click', () => {
+                const link = document.getElementById('lobby-link').value;
+                navigator.clipboard?.writeText(link);
+                const toast = document.getElementById('copy-toast');
+                toast.classList.remove('hidden');
+                setTimeout(() => toast.classList.add('hidden'), 1500);
+            });
+
+        // Lobby — start game
+        document.getElementById('btn-start-game')
+            ?.addEventListener('click', () => {
+                state.socket.emit('start-game', { roomCode: state.roomCode });
+            });
+
+        // Round 1 — done button
+        document.getElementById('btn-r1-done')
+            ?.addEventListener('click', () => {
+                const answers = state.round1Questions.map((_, i) => {
+                    return document.querySelector(`[data-index="${i}"]`)?.value.trim() || '(no answer)';
+                });
+                stopCountdown();
+                state.socket.emit('submit-round1', { answers, roomCode: state.roomCode });
+                showScreen('screen-round1-wait');
+            });
+
+        // Round 2 — done button
+        document.getElementById('btn-r2-done')
+            ?.addEventListener('click', () => {
+                const answers = state.round2Questions.map((_, i) => {
+                    return document.querySelector(`[data-r2-index="${i}"]`)?.value.trim() || '(no answer)';
+                });
+                stopCountdown();
+                state.socket.emit('submit-round2', { answers, roomCode: state.roomCode });
+                showScreen('screen-round2-wait');
+            });
+
+        // Voting — star rating
+        document.getElementById('star-rating')
+            ?.addEventListener('click', (e) => {
+                const star = e.target.closest('.star');
+                if (!star) return;
+                const rating = parseInt(star.dataset.value);
+                state.myVote = rating;
+                document.querySelectorAll('.star').forEach((s, i) => {
+                    s.classList.toggle('active', i < rating);
+                });
+                document.getElementById('rating-label').textContent = `${rating} star${rating > 1 ? 's' : ''}`;
+                document.getElementById('btn-submit-vote').disabled = false;
+            });
+
+        // Voting — submit vote
+        document.getElementById('btn-submit-vote')
+            ?.addEventListener('click', () => {
+                if (state.myVote === null) return;
+                state.socket.emit('submit-vote', {
+                    targetId: state.currentVoteTarget,
+                    rating: state.myVote,
+                    roomCode: state.roomCode
+                });
+                document.getElementById('btn-submit-vote').disabled = true;
+                document.getElementById('btn-submit-vote').textContent = 'Vote submitted ✓';
+            });
+
+        // Reveal — see winner
+        document.getElementById('btn-see-winner')
+            ?.addEventListener('click', () => {
+                state.socket.emit('request-winner', { roomCode: state.roomCode });
+            });
+
+        // Winner — new game
+        document.getElementById('btn-new-game-restart')
+            ?.addEventListener('click', () => {
+                state.socket.emit('request-new-game', { roomCode: state.roomCode });
+            });
+    });
+
+// ─── RENDER LOBBY (matches your index.html IDs) ───────────────────────────────
+    function renderLobby(room) {
+        document.getElementById('lobby-room-code').textContent = room.code;
+
+        const link = `${window.location.origin}?room=${room.code}`;
+        const linkEl = document.getElementById('lobby-link');
+        if (linkEl) linkEl.value = link;
+
+        const list = document.getElementById('lobby-player-list');
+        if (list) {
+            list.innerHTML = '';
+            room.players.forEach(p => {
+                const li = document.createElement('li');
+                li.className = 'player-item';
+                li.innerHTML = `
+        <span class="player-avatar">${p.name[0].toUpperCase()}</span>
+        <span class="player-name">${esc(p.name)}</span>
+        ${p.id === room.hostId ? '<span class="host-tag">HOST</span>' : ''}
+      `;
+                list.appendChild(li);
+            });
+        }
+
+        const countEl = document.getElementById('lobby-player-count');
+        if (countEl) countEl.textContent = `${room.players.length} / ${room.settings?.playerCount ?? 4}`;
+
+        const startBtn = document.getElementById('btn-start-game');
+        if (startBtn) {
+            const required = room.settings?.playerCount ?? 4;
+            const ready = room.players.length >= required;
+            startBtn.disabled = !state.isHost || !ready;
+            startBtn.textContent = ready && state.isHost
+                ? 'Start Game →'
+                : `Waiting for players... (${room.players.length}/${required})`;
+        }
+    }
+
+// ─── RENDER ROUND 1 (matches your index.html IDs) ────────────────────────────
+    function renderRound1(questions) {
+        const container = document.getElementById('r1-questions');
+        container.innerHTML = '';
+        questions.forEach((q, i) => {
+            const block = document.createElement('div');
+            block.className = 'question-block';
+            block.innerHTML = `
+      <div class="question-block-inner">
+        <span class="q-number">Q${i + 1}</span>
+        <p class="q-text">${esc(q)}</p>
+        <textarea class="q-answer" data-index="${i}" placeholder="Your answer..." rows="2" maxlength="300"></textarea>
+      </div>
+    `;
+            container.appendChild(block);
+        });
+
+        // Update progress on typing
+        container.addEventListener('input', () => {
+            const filled = questions.filter((_, i) =>
+                document.querySelector(`[data-index="${i}"]`)?.value.trim()
+            ).length;
+            document.getElementById('r1-progress').textContent = `${filled} / ${questions.length} answered`;
+            document.getElementById('r1-progress-fill').style.width = `${(filled / questions.length) * 100}%`;
+            document.getElementById('btn-r1-done').disabled = filled < questions.length;
+        });
+    }
+
+// ─── RENDER ROUND 2 (matches your index.html IDs) ────────────────────────────
+    function renderRound2(assignedAnswers, round1Questions, round2Questions) {
+        // Show assigned profile
+        const profileEl = document.getElementById('r2-profile-answers');
+        if (profileEl) {
+            profileEl.innerHTML = '';
+            round1Questions.forEach((q, i) => {
+                const div = document.createElement('div');
+                div.className = 'profile-qa';
+                div.innerHTML = `
+        <span class="profile-q">${esc(q)}</span>
+        <span class="profile-a">"${esc(assignedAnswers[i] || '—')}"</span>
+      `;
+                profileEl.appendChild(div);
+            });
+        }
+
+        // Render R2 questions
+        const container = document.getElementById('r2-questions');
+        container.innerHTML = '';
+        round2Questions.forEach((q, i) => {
+            const block = document.createElement('div');
+            block.className = 'question-block';
+            block.innerHTML = `
+      <div class="question-block-inner">
+        <span class="q-number">Q${i + 1}</span>
+        <p class="q-text">${esc(q)}</p>
+        <textarea class="q-answer" data-r2-index="${i}" placeholder="Answer as them..." rows="2" maxlength="300"></textarea>
+      </div>
+    `;
+            container.appendChild(block);
+        });
+
+        container.addEventListener('input', () => {
+            const filled = round2Questions.filter((_, i) =>
+                document.querySelector(`[data-r2-index="${i}"]`)?.value.trim()
+            ).length;
+            document.getElementById('r2-progress').textContent = `${filled} / ${round2Questions.length} answered`;
+            document.getElementById('r2-progress-fill').style.width = `${(filled / round2Questions.length) * 100}%`;
+            document.getElementById('btn-r2-done').disabled = filled < round2Questions.length;
+        });
+    }
+
+// ─── RENDER VOTING (matches your index.html IDs) ──────────────────────────────
+    function renderVoting(targetNumber, targetName, round1Answers, round2Answers, round1Questions, round2Questions) {
+        document.getElementById('voting-title').textContent = `Evaluating P${targetNumber} — ${targetName}`;
+
+        const r1El = document.getElementById('voting-r1-answers');
+        r1El.innerHTML = '';
+        round1Questions.forEach((q, i) => {
+            const div = document.createElement('div');
+            div.className = 'voting-qa';
+            div.innerHTML = `<span class="voting-q">${esc(q)}</span><span class="voting-a">"${esc(round1Answers?.[i] || '—')}"</span>`;
+            r1El.appendChild(div);
+        });
+
+        const r2El = document.getElementById('voting-r2-answers');
+        r2El.innerHTML = '';
+        round2Questions.forEach((q, i) => {
+            const div = document.createElement('div');
+            div.className = 'voting-qa';
+            div.innerHTML = `<span class="voting-q">${esc(q)}</span><span class="voting-a">"${esc(round2Answers?.[i] || '—')}"</span>`;
+            r2El.appendChild(div);
+        });
+
+        // Reset stars
+        document.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
+        document.getElementById('rating-label').textContent = 'Tap to rate';
+        document.getElementById('btn-submit-vote').disabled = true;
+        document.getElementById('btn-submit-vote').textContent = 'Submit Vote';
+        state.myVote = null;
+    }
