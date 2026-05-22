@@ -1,7 +1,7 @@
 {
   "name" : "Who is the Good Liar",
   "version": "1.0.0",
-  "description": "A multiplayer browser game where pkayers impersonate each other",
+  "description": "A multiplayer browser game where players impersonate each other",
   "main": "server/server.js",
   "script": {
     "start": "node server/server.js",
