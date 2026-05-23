@@ -430,5 +430,5 @@ function clearRoomTimer(roomCode) {
 // ─── Start server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
-    console.log(`🪞 Liar's Mirror → http://localhost:${PORT}`);
+    console.log(`Who is the Best Impersonator → http://localhost:${PORT}`);
 });
