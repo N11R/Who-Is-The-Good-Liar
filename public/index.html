@@ -3,11 +3,205 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Who is the Good Liar?</title>
+    <title>Who is the Best Liar?</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./css/style.css">
+    <style>
+        /* Added feature styles */
+        .btn-howto {
+            margin-bottom: 14px;
+        }
+
+        #how-to-play-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.65);
+        }
+
+        #how-to-play-modal.hidden {
+            display: none !important;
+        }
+
+        .how-modal-content {
+            width: 100%;
+            max-width: 420px;
+            padding: 24px;
+            border-radius: 20px;
+            background: var(--indigo, #1E104E);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: var(--ice, #E8E0F0);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        .how-modal-content h2 {
+            margin-bottom: 16px;
+        }
+
+        .how-modal-content p {
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .qr-box {
+            text-align: center;
+            padding: 16px;
+            border-radius: 16px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .qr-box img {
+            width: 150px;
+            height: 150px;
+            border-radius: 12px;
+            background: white;
+            padding: 8px;
+        }
+
+        .qr-box p {
+            margin-top: 8px;
+            font-family: var(--font-mono, monospace);
+            font-size: 0.8rem;
+            opacity: 0.75;
+        }
+
+        .ready-banner {
+            padding: 14px;
+            border-radius: 14px;
+            text-align: center;
+            font-family: var(--font-mono, monospace);
+            background: rgba(90, 237, 196, 0.12);
+            color: var(--mint, #5AEDC4);
+            border: 1px solid rgba(90, 237, 196, 0.25);
+            animation: readyPulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes readyPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.02); opacity: 0.8; }
+        }
+
+        .ready-tag, .disconnect-tag {
+            font-family: var(--font-mono, monospace);
+            font-size: 0.65rem;
+            padding: 4px 8px;
+            border-radius: 8px;
+            margin-left: auto;
+        }
+
+        .ready-tag {
+            color: var(--mint, #5AEDC4);
+            background: rgba(90, 237, 196, 0.1);
+        }
+
+        .disconnect-tag {
+            color: var(--coral, #FF653F);
+            background: rgba(255, 101, 63, 0.12);
+        }
+
+        .player-disconnected {
+            opacity: 0.55;
+        }
+
+        .liar-guess-box {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            padding: 18px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            text-align: center;
+        }
+
+        .liar-guess-box h3 {
+            font-family: var(--font-mono, monospace);
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+        }
+
+        .liar-guess-box p {
+            font-size: 0.85rem;
+            opacity: 0.72;
+            margin-bottom: 12px;
+        }
+
+        #liar-guess-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .liar-guess-btn {
+            padding: 12px;
+            border: 1px solid rgba(255, 200, 92, 0.22);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.04);
+            color: var(--ice, #E8E0F0);
+            font-family: var(--font-mono, monospace);
+            cursor: pointer;
+            transition: 0.2s ease;
+        }
+
+        .liar-guess-btn:hover {
+            transform: translateY(-2px);
+            border-color: var(--gold, #FFC85C);
+        }
+
+        .liar-guess-btn.selected {
+            background: var(--gold, #FFC85C);
+            color: var(--indigo-deeper, #0d0726);
+            border-color: var(--gold, #FFC85C);
+        }
+
+        .detective-results {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .reveal-detective-heading {
+            background: rgba(90, 237, 196, 0.08);
+            color: var(--mint, #5AEDC4);
+            border-left: 3px solid var(--mint, #5AEDC4);
+        }
+
+        .detective-card {
+            padding: 14px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .detective-card h4 {
+            margin-bottom: 10px;
+            font-family: var(--font-mono, monospace);
+            font-size: 0.8rem;
+        }
+
+        .detective-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 0;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            font-size: 0.85rem;
+        }
+
+        .detective-row.correct {
+            color: var(--mint, #5AEDC4);
+        }
+
+        .detective-row.wrong {
+            color: var(--coral-light, #FF8A6A);
+        }
+    </style>
 </head>
 <body>
 
@@ -23,12 +217,14 @@
         </div>
 
         <header class="landing-header">
-            <h1 class="game-title" data-text="Who is the Good Liar?">Who is the Good Liar?</h1>
+            <h1 class="game-title" data-text="Who is the Best Liar?">Who is the Best Liar?</h1>
             <p class="game-tagline">become someone else. fool everyone.</p>
         </header>
 
+        <button class="btn btn-ghost btn-howto" id="btn-how-to-play" type="button">How to Play</button>
+
         <div class="landing-actions">
-            <button class="btn btn-primary" id="btn-new-game">New Game</button>
+            <button class="btn btn-primary" id="btn-new-game">Create Game</button>
             <button class="btn btn-ghost" id="btn-join-game">Join Room</button>
         </div>
 
@@ -127,6 +323,15 @@
                 <button class="btn-icon" id="btn-copy-link" title="Copy link">📋</button>
             </div>
             <span class="copy-toast hidden" id="copy-toast">Copied!</span>
+        </div>
+
+        <div class="qr-box hidden" id="qr-box">
+            <img id="lobby-qr" alt="QR code to join this room" />
+            <p>Scan to join the room</p>
+        </div>
+
+        <div class="ready-banner hidden" id="ready-banner">
+            Everyone is in. Ready to start ✨
         </div>
 
         <div class="players-section">
@@ -332,6 +537,12 @@
                 <span class="rating-label" id="rating-label">Tap to rate</span>
             </div>
 
+            <div class="liar-guess-box">
+                <h3>Who do you think is the liar?</h3>
+                <p>Pick the player you think wrote the fake Round 2 answers.</p>
+                <div id="liar-guess-options"></div>
+            </div>
+
             <button class="btn btn-primary btn-full" id="btn-submit-vote" disabled>Submit Vote</button>
         </div>
     </div>
@@ -431,7 +642,18 @@
             <!-- Dynamically filled with other player scores -->
         </div>
 
-        <button class="btn btn-primary btn-full" id="btn-new-game-restart">Start a New Game</button>
+        <button class="btn btn-primary btn-full" id="btn-new-game-restart">Start a Create Game</button>
+    </div>
+</div>
+
+<div id="how-to-play-modal" class="hidden">
+    <div class="how-modal-content">
+        <h2>How To Play</h2>
+        <p><strong>Round 1:</strong> Answer questions honestly as yourself.</p>
+        <p><strong>Round 2:</strong> You secretly become another player and answer as if you were them.</p>
+        <p><strong>Voting:</strong> Rate the impersonation and guess who the liar is.</p>
+        <p><strong>Reveal:</strong> See who fooled everyone and who guessed correctly.</p>
+        <button id="btn-close-how" class="btn btn-primary">Got it</button>
     </div>
 </div>
 

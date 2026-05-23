@@ -42,7 +42,7 @@ function createRoom(socketId, name, settings = {}) {
         players: [host],
         questions: { round1: [], round2: [] },
         identityMap: {},
-        voting: { currentPlayerIndex: 0, votes: {} },
+        voting: { currentPlayerIndex: 0, votes: {}, guesses: {} },
         timerEnd: null,
         createdAt: Date.now(),
     };
@@ -85,12 +85,12 @@ function getRoom(code) {
 }
 
 function getRoomBySocketId(socketId) {
-    return Object.values(rooms).find(r => r.players.some(p => p.id === socketId)) ?? null;
+    return Object.values(rooms).find(r => r.players.some(p => p.socketId === socketId)) ?? null;
 }
 
 // ─── REMOVE PLAYER (lobby only) ───────────────────────────────────────────────
 function removePlayer(room, socketId) {
-    room.players = room.players.filter(p => p.id !== socketId);
+    room.players = room.players.filter(p => p.socketId !== socketId);
     room.players.forEach((p, i) => { p.number = i + 1; }); // re-number
 }
 
@@ -102,7 +102,7 @@ function deleteRoom(code) {
 function resetRoom(room) {
     room.phase = 'lobby';
     room.identityMap = {};
-    room.voting = { currentPlayerIndex: 0, votes: {} };
+    room.voting = { currentPlayerIndex: 0, votes: {}, guesses: {} };
     room.timerEnd = null;
     room.questions = { round1: [], round2: [] };
     room.players.forEach(p => {

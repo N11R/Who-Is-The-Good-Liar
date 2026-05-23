@@ -1704,6 +1704,109 @@ input, textarea, button {
 }
 
 
+
+/* How to Play panel */
+.btn-howto {
+    width: 100%;
+    max-width: 280px;
+    margin-bottom: 10px;
+}
+
+.how-to-panel {
+    width: 100%;
+    max-width: 340px;
+    text-align: left;
+    background: rgba(255, 200, 92, 0.06);
+    border: 1px solid rgba(255, 200, 92, 0.18);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    margin-bottom: 18px;
+    animation: screenFadeIn 0.3s ease-out;
+}
+
+.how-to-panel h2 {
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    color: var(--gold);
+    margin-bottom: 10px;
+}
+
+.how-to-panel ol {
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.how-to-panel li {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--ice-dim);
+}
+
+/* QR + ready lobby polish */
+.qr-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    background: rgba(90, 237, 196, 0.04);
+    border: 1px solid rgba(90, 237, 196, 0.14);
+    border-radius: var(--radius-md);
+}
+
+.qr-box img {
+    width: 132px;
+    height: 132px;
+    border-radius: var(--radius-sm);
+    background: var(--white);
+    padding: 8px;
+}
+
+.qr-box p {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--mint);
+    opacity: 0.75;
+}
+
+.ready-banner {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    text-align: center;
+    color: var(--indigo-deeper);
+    background: linear-gradient(135deg, var(--mint), var(--gold));
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-mint);
+    animation: readyPop 0.7s ease-out infinite alternate;
+}
+
+@keyframes readyPop {
+    from { transform: scale(1); }
+    to { transform: scale(1.025); }
+}
+
+.player-item.disconnected {
+    opacity: 0.45;
+    border-style: dashed;
+}
+
+.player-status {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: var(--lavender-dim);
+}
+
+.star.active {
+    color: var(--gold);
+    text-shadow: 0 0 14px rgba(255, 200, 92, 0.4);
+    transform: scale(1.08);
+}
+
+
 /* ═══════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════ */

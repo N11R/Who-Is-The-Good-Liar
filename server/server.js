@@ -63,11 +63,37 @@ io.on('connection', (socket) => {
         console.log(`[room] ${name} joined ${room.code}`);
     });
 
+    // ── REJOIN ROOM AFTER REFRESH ────────────────────────────────────────────
+    socket.on('rejoin-room', ({ playerId, code }) => {
+        const room = roomManager.getRoom(String(code || '').toUpperCase());
+        if (!room) return socket.emit('game-error', { message: 'Room no longer exists.' });
+
+        const player = room.players.find(p => p.id === playerId);
+        if (!player) return socket.emit('game-error', { message: 'Player not found in this room.' });
+
+        player.socketId = socket.id;
+        player.connected = true;
+
+        socket.join(room.code);
+
+        socket.emit('room-rejoined', {
+            playerId: player.id,
+            room: roomManager.roomSummary(room),
+        });
+
+        io.to(room.code).emit('player-list-update', {
+            room: roomManager.roomSummary(room),
+        });
+
+        console.log(`[room] ${player.name} rejoined ${room.code}`);
+    });
+
     // ── START GAME ───────────────────────────────────────────────────────────
     socket.on('start-game', ({ roomCode }) => {
         const room = roomManager.getRoom(roomCode);
         if (!room) return socket.emit('game-error', { message: 'Room not found.' });
-        if (room.hostId !== socket.id) return socket.emit('game-error', { message: 'Only the host can start the game.' });
+        const hostPlayer = room.players.find(p => p.id === room.hostId);
+        if (!hostPlayer || hostPlayer.socketId !== socket.id) return socket.emit('game-error', { message: 'Only the host can start the game.' });
         if (room.players.length < 3) return socket.emit('game-error', { message: 'Need at least 3 players to start.' });
         if (room.phase !== 'lobby') return socket.emit('game-error', { message: 'Game already started.' });
 
@@ -92,7 +118,7 @@ io.on('connection', (socket) => {
         const room = roomManager.getRoom(roomCode);
         if (!room || room.phase !== 'round1') return;
 
-        const player = room.players.find(p => p.id === socket.id);
+        const player = room.players.find(p => p.socketId === socket.id);
         if (!player || player.round1Answers) return; // already submitted
 
         player.round1Answers = answers;
@@ -115,7 +141,7 @@ io.on('connection', (socket) => {
         const room = roomManager.getRoom(roomCode);
         if (!room || room.phase !== 'round2') return;
 
-        const player = room.players.find(p => p.id === socket.id);
+        const player = room.players.find(p => p.socketId === socket.id);
         if (!player || player.round2Answers) return; // already submitted
 
         player.round2Answers = answers;
@@ -134,20 +160,26 @@ io.on('connection', (socket) => {
     });
 
     // ── SUBMIT VOTE ──────────────────────────────────────────────────────────
-    socket.on('submit-vote', ({ targetId, rating, roomCode }) => {
+    socket.on('submit-vote', ({ targetId, rating, guessedLiarId, roomCode }) => {
         const room = roomManager.getRoom(roomCode);
         if (!room || room.phase !== 'voting') return;
 
-        const voter = room.players.find(p => p.id === socket.id);
+        const voter = room.players.find(p => p.socketId === socket.id);
         const target = room.players.find(p => p.number === targetId);
         if (!voter || !target) return;
         if (voter.id === target.id) return; // can't vote on yourself
 
-        // Store vote: votes[targetPlayerNumber][voterId] = rating
+        // Store rating separately from the liar guess.
+        // votes[targetPlayerNumber][voterId] = rating
+        // guesses[targetPlayerNumber][voterId] = guessedLiarId
         if (!room.voting.votes[targetId]) room.voting.votes[targetId] = {};
-        room.voting.votes[targetId][socket.id] = rating;
+        if (!room.voting.guesses) room.voting.guesses = {};
+        if (!room.voting.guesses[targetId]) room.voting.guesses[targetId] = {};
 
-        console.log(`[vote] ${voter.name} rated P${targetId}: ${rating}/5`);
+        room.voting.votes[targetId][voter.id] = Number(rating);
+        room.voting.guesses[targetId][voter.id] = guessedLiarId;
+
+        console.log(`[vote] ${voter.name} rated P${targetId}: ${rating}/5 and guessed ${guessedLiarId}`);
 
         // Check if all eligible voters submitted for this hot seat player
         const targetPlayer = room.players[room.voting.currentPlayerIndex];
@@ -171,7 +203,8 @@ io.on('connection', (socket) => {
     socket.on('request-new-game', ({ roomCode }) => {
         const room = roomManager.getRoom(roomCode);
         if (!room) return;
-        if (room.hostId !== socket.id) return socket.emit('game-error', { message: 'Only the host can start a new game.' });
+        const hostPlayer = room.players.find(p => p.id === room.hostId);
+        if (!hostPlayer || hostPlayer.socketId !== socket.id) return socket.emit('game-error', { message: 'Only the host can start a new game.' });
 
         roomManager.resetRoom(room);
         io.to(roomCode).emit('game-reset');
@@ -204,7 +237,7 @@ io.on('connection', (socket) => {
             });
         } else {
             // Mid-game: mark as disconnected but keep their data
-            const player = room.players.find(p => p.id === socket.id);
+            const player = room.players.find(p => p.socketId === socket.id);
             if (player) player.connected = false;
 
             io.to(room.code).emit('player-list-update', {
@@ -226,7 +259,7 @@ io.on('connection', (socket) => {
             const assignedPlayer = room.players.find(p => p.id === room.identityMap[player.id]);
             const assignedAnswers = assignedPlayer?.round1Answers ?? [];
 
-            io.to(player.id).emit('round2-start', {
+            io.to(player.socketId).emit('round2-start', {
                 assignedAnswers,
                 round1Questions: room.questions.round1,
                 round2Questions,
@@ -280,11 +313,20 @@ io.on('connection', (socket) => {
         );
         const impersonator = room.players.find(p => p.id === impersonatorId);
 
+        // Voters can guess any player except the person being evaluated.
+        const guessOptions = room.players
+            .filter(p => p.id !== targetPlayer.id)
+            .map(p => ({
+                id: p.id,
+                number: p.number,
+                name: p.name,
+            }));
+
         // Send voting event to each player
         room.players.forEach(player => {
             const isBeingEvaluated = player.id === targetPlayer.id;
 
-            io.to(player.id).emit('voting-start', {
+            io.to(player.socketId).emit('voting-start', {
                 targetPlayerNumber: targetPlayer.number,
                 targetName: targetPlayer.name,
                 targetRound1: targetPlayer.round1Answers,
@@ -292,6 +334,7 @@ io.on('connection', (socket) => {
                 round1Questions: room.questions.round1,
                 round2Questions: room.questions.round2,
                 isBeingEvaluated,
+                guessOptions,
                 progress: {
                     current: room.voting.currentPlayerIndex + 1,
                     total: room.players.length,
@@ -313,6 +356,7 @@ io.on('connection', (socket) => {
             round2Questions: room.questions.round2,
             identityMap: room.identityMap,
             scores,
+            guesses: room.voting.guesses || {},
         });
 
         console.log(`[game] ${roomCode} reveal`);

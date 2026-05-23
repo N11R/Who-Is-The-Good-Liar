@@ -7,6 +7,7 @@ const state = {
     playerName: null,
     roomCode: null,
     isHost: false,
+    myLiarGuess: null,
 
     // Round 1
     round1Questions: [],
@@ -25,10 +26,38 @@ const state = {
     // Timer
     timerInterval: null,
     timerEnd: null,
+    reconnectAttempted: false,
 };
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const roomFromURL = params.get('room');
+
+    // If opening a shared room link, show join form instead of auto-rejoining host
+    if (roomFromURL) {
+        localStorage.removeItem('playerId');
+        localStorage.removeItem('roomCode');
+        localStorage.removeItem('playerName');
+
+        connectSocket();
+
+        checkURLForRoomCode();
+        return;
+    }
+
+    // Only auto-rejoin when there is NO room link in the URL
+    const savedPlayerId = localStorage.getItem('playerId');
+    const savedRoomCode = localStorage.getItem('roomCode');
+    const savedPlayerName = localStorage.getItem('playerName');
+
+    if (savedPlayerId && savedRoomCode && savedPlayerName) {
+        state.playerId = savedPlayerId;
+        state.roomCode = savedRoomCode;
+        state.playerName = savedPlayerName;
+        state.reconnectAttempted = true;
+    }
+
     connectSocket();
     checkURLForRoomCode();
 });
@@ -37,13 +66,29 @@ window.addEventListener('DOMContentLoaded', () => {
 function connectSocket() {
     state.socket = io();
 
+    // Reconnect to the same room after refresh
+    state.socket.on('connect', () => {
+        if (state.reconnectAttempted && state.playerId && state.roomCode) {
+            state.socket.emit('rejoin-room', {
+                playerId: state.playerId,
+                code: state.roomCode,
+                name: state.playerName
+            });
+        }
+    });
+
     // ── Room events ──────────────────────────────────────────────────────────
 
     state.socket.on('room-created', ({ code, playerId, settings }) => {
         state.playerId = playerId;
         state.roomCode = code;
         state.isHost = true;
-        renderLobby({ code, players: [{ name: state.playerName, number: 1 }], settings });
+
+        localStorage.setItem('playerId', playerId);
+        localStorage.setItem('roomCode', code);
+        localStorage.setItem('playerName', state.playerName);
+
+        renderLobby({ code, players: [{ id: playerId, name: state.playerName, number: 1, connected: true }], hostId: playerId, settings });
         showScreen('screen-lobby');
     });
 
@@ -51,6 +96,20 @@ function connectSocket() {
         state.playerId = playerId;
         state.roomCode = room.code;
         state.isHost = false;
+
+        localStorage.setItem('playerId', playerId);
+        localStorage.setItem('roomCode', room.code);
+        localStorage.setItem('playerName', state.playerName);
+
+        renderLobby(room);
+        showScreen('screen-lobby');
+    });
+
+    state.socket.on('room-rejoined', ({ playerId, room }) => {
+        state.playerId = playerId;
+        state.roomCode = room.code;
+        state.isHost = room.hostId === playerId;
+
         renderLobby(room);
         showScreen('screen-lobby');
     });
@@ -97,7 +156,7 @@ function connectSocket() {
 
     // ── Voting ───────────────────────────────────────────────────────────────
 
-    state.socket.on('voting-start', ({ targetPlayerNumber, targetName, targetRound1, targetRound2, round1Questions, round2Questions, isBeingEvaluated }) => {
+    state.socket.on('voting-start', ({ targetPlayerNumber, targetName, targetRound1, targetRound2, round1Questions, round2Questions, isBeingEvaluated, guessOptions }) => {
         state.currentVoteTarget = targetPlayerNumber;
         state.isBeingEvaluated = isBeingEvaluated;
         state.myVote = null;
@@ -109,7 +168,7 @@ function connectSocket() {
             showScreen('screen-hotseat');
         } else {
             // I'm voting on someone else
-            renderVoting(targetPlayerNumber, targetName, targetRound1, targetRound2, round1Questions, round2Questions);
+            renderVoting(targetPlayerNumber, targetName, targetRound1, targetRound2, round1Questions, round2Questions, guessOptions);
             showScreen('screen-voting');
         }
     });
@@ -121,8 +180,8 @@ function connectSocket() {
 
     // ── Reveal ───────────────────────────────────────────────────────────────
 
-    state.socket.on('reveal-data', ({ players, round1Questions, round2Questions, identityMap, scores }) => {
-        renderReveal(players, round1Questions, round2Questions, identityMap, scores);
+    state.socket.on('reveal-data', ({ players, round1Questions, round2Questions, identityMap, scores, guesses }) => {
+        renderReveal(players, round1Questions, round2Questions, identityMap, scores, guesses);
         showScreen('screen-reveal');
     });
 
@@ -166,21 +225,31 @@ function checkURLForRoomCode() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('room');
     if (code) {
-        const input = document.getElementById('join-code-input');
+        const input = document.getElementById('join-code');
         if (input) input.value = code.toUpperCase();
-        showJoinFlow();
+
+        const joinForm = document.getElementById('join-form');
+        if (joinForm) joinForm.classList.remove('hidden');
+
+        document.getElementById('btn-join-game')?.style.setProperty('display', 'none');
+        document.getElementById('btn-new-game')?.style.setProperty('display', 'none');
     }
 }
 
 // ─── LANDING SCREEN ───────────────────────────────────────────────────────────
 function showNewGameFlow() {
-    document.getElementById('panel-new-game').style.display = 'flex';
-    document.getElementById('panel-join-game').style.display = 'none';
+    showScreen('screen-setup');
 }
 
 function showJoinFlow() {
-    document.getElementById('panel-new-game').style.display = 'none';
-    document.getElementById('panel-join-game').style.display = 'flex';
+    const joinForm = document.getElementById('join-form');
+    if (joinForm) joinForm.classList.remove('hidden');
+
+    const joinBtn = document.getElementById('btn-join-game');
+    const newBtn = document.getElementById('btn-new-game');
+
+    if (joinBtn) joinBtn.style.display = 'none';
+    if (newBtn) newBtn.style.display = 'none';
 }
 
 // ─── HOST: CREATE ROOM ────────────────────────────────────────────────────────
@@ -391,7 +460,7 @@ function autoSubmitRound2() {
 }
 
 // ─── VOTING — HOT SEAT ────────────────────────────────────────────────────────
-function renderVoting(targetNumber, targetName, round1Answers, round2Answers, round1Questions, round2Questions) {
+function renderVoting(targetNumber, targetName, round1Answers, round2Answers, round1Questions, round2Questions, guessOption) {
     document.getElementById('voting-target-label').textContent =
         `Evaluating P${targetNumber}${targetName ? ' — ' + targetName : ''}`;
 
@@ -449,7 +518,7 @@ function submitVote() {
 }
 
 // ─── REVEAL SCREEN ────────────────────────────────────────────────────────────
-function renderReveal(players, round1Questions, round2Questions, identityMap, scores) {
+function renderReveal(players, round1Questions, round2Questions, identityMap, scores, guesses = {}) {
     const container = document.getElementById('reveal-grid');
     container.innerHTML = '';
 
@@ -533,6 +602,41 @@ function renderReveal(players, round1Questions, round2Questions, identityMap, sc
         r2Section.appendChild(qBlock);
     });
     container.appendChild(r2Section);
+
+    // ── 4. Detective results — who guessed the liar correctly ──
+    const detectiveSection = document.createElement('div');
+    detectiveSection.className = 'detective-results';
+    detectiveSection.innerHTML = '<h3 class="reveal-round-heading reveal-detective-heading">Who Guessed The Liar?</h3>';
+
+    players.forEach(targetPlayer => {
+        const impersonator = impersonatorOf[targetPlayer.id];
+        const targetVotes = guesses?.[targetPlayer.number] ?? {};
+
+        const card = document.createElement('div');
+        card.className = 'detective-card';
+
+        const rows = Object.entries(targetVotes).map(([voterId, guessedLiarId]) => {
+            const voter = players.find(p => p.id === voterId);
+            const guessed = players.find(p => p.id === guessedLiarId);
+            const correct = impersonator && guessedLiarId === impersonator.id;
+
+            return `
+                <div class="detective-row ${correct ? 'correct' : 'wrong'}">
+                    <span>${voter ? `P${voter.number} ${esc(voter.name)}` : 'Unknown player'}</span>
+                    <span>guessed ${guessed ? `P${guessed.number} ${esc(guessed.name)}` : '—'} ${correct ? '✅' : '❌'}</span>
+                </div>
+            `;
+        }).join('') || '<div class="detective-row">No guesses submitted.</div>';
+
+        card.innerHTML = `
+            <h4>P${targetPlayer.number} ${esc(targetPlayer.name)} was impersonated by ${impersonator ? `P${impersonator.number} ${esc(impersonator.name)}` : '?'}</h4>
+            ${rows}
+        `;
+
+        detectiveSection.appendChild(card);
+    });
+
+    container.appendChild(detectiveSection);
 }
 
 function goToWinner() {
@@ -663,7 +767,12 @@ function resetState() {
     state.assignedAnswers = null;
     state.currentVoteTarget = null;
     state.myVote = null;
+    state.myLiarGuess = null;
     state.isBeingEvaluated = false;
+
+    localStorage.removeItem('playerId');
+    localStorage.removeItem('roomCode');
+    localStorage.removeItem('playerName');
 }
 
 
@@ -673,6 +782,16 @@ function resetState() {
 window.addEventListener('DOMContentLoaded', () => {
 
     // Landing
+    document.getElementById('btn-how-to-play')
+        ?.addEventListener('click', () => {
+            document.getElementById('how-to-play-modal')?.classList.remove('hidden');
+        });
+
+    document.getElementById('btn-close-how')
+        ?.addEventListener('click', () => {
+            document.getElementById('how-to-play-modal')?.classList.add('hidden');
+        });
+
     document.getElementById('btn-new-game')
         ?.addEventListener('click', () => showScreen('screen-setup'));
 
@@ -812,16 +931,20 @@ window.addEventListener('DOMContentLoaded', () => {
                 s.classList.toggle('active', i < rating);
             });
             document.getElementById('rating-label').textContent = `${rating} star${rating > 1 ? 's' : ''}`;
-            document.getElementById('btn-submit-vote').disabled = false;
+
+            if (state.myLiarGuess !== null) {
+                document.getElementById('btn-submit-vote').disabled = false;
+            }
         });
 
     // Voting — submit vote
     document.getElementById('btn-submit-vote')
         ?.addEventListener('click', () => {
-            if (state.myVote === null) return;
+            if (state.myVote === null || state.myLiarGuess === null) return;
             state.socket.emit('submit-vote', {
                 targetId: state.currentVoteTarget,
                 rating: state.myVote,
+                guessedLiarId: state.myLiarGuess,
                 roomCode: state.roomCode
             });
             document.getElementById('btn-submit-vote').disabled = true;
@@ -843,38 +966,56 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // ─── RENDER LOBBY (matches your index.html IDs) ───────────────────────────────
 function renderLobby(room) {
+    if (!room) return;
+
     document.getElementById('lobby-room-code').textContent = room.code;
 
     const link = `${window.location.origin}?room=${room.code}`;
     const linkEl = document.getElementById('lobby-link');
     if (linkEl) linkEl.value = link;
 
+    // QR code for easy phone joining
+    const qrImg = document.getElementById('lobby-qr');
+    const qrBox = document.getElementById('qr-box');
+    if (qrImg && qrBox) {
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(link)}`;
+        qrBox.classList.remove('hidden');
+    }
+
     const list = document.getElementById('lobby-player-list');
     if (list) {
         list.innerHTML = '';
         room.players.forEach(p => {
             const li = document.createElement('li');
-            li.className = 'player-item';
+            li.className = `player-item ${p.connected === false ? 'player-disconnected' : ''}`;
             li.innerHTML = `
-        <span class="player-avatar">${p.name[0].toUpperCase()}</span>
-        <span class="player-name">${esc(p.name)}</span>
-        ${p.id === room.hostId ? '<span class="host-tag">HOST</span>' : ''}
-      `;
+                <span class="player-avatar">${esc((p.name || '?')[0]).toUpperCase()}</span>
+                <span class="player-name">${esc(p.name)}</span>
+                ${p.id === room.hostId ? '<span class="host-tag">HOST</span>' : ''}
+                ${p.connected === false ? '<span class="disconnect-tag">OFFLINE</span>' : '<span class="ready-tag">READY ✓</span>'}
+            `;
             list.appendChild(li);
         });
     }
 
+    const required = room.settings?.playerCount ?? 4;
+    const joined = room.players.length;
+    const allIn = joined >= required;
+
     const countEl = document.getElementById('lobby-player-count');
-    if (countEl) countEl.textContent = `${room.players.length} / ${room.settings?.playerCount ?? 4}`;
+    if (countEl) countEl.textContent = `${joined} / ${required}`;
+
+    const readyBanner = document.getElementById('ready-banner');
+    if (readyBanner) {
+        readyBanner.classList.toggle('hidden', !allIn);
+    }
 
     const startBtn = document.getElementById('btn-start-game');
     if (startBtn) {
-        const required = room.settings?.playerCount ?? 4;
-        const ready = room.players.length >= required;
-        startBtn.disabled = !state.isHost || !ready;
-        startBtn.textContent = ready && state.isHost
+        startBtn.disabled = !state.isHost || !allIn;
+        startBtn.textContent = allIn && state.isHost
             ? 'Start Game →'
-            : `Waiting for players... (${room.players.length}/${required})`;
+            : `Waiting for players... (${joined}/${required})`;
     }
 }
 
@@ -950,7 +1091,7 @@ function renderRound2(assignedAnswers, round1Questions, round2Questions) {
 }
 
 // ─── RENDER VOTING (matches your index.html IDs) ──────────────────────────────
-function renderVoting(targetNumber, targetName, round1Answers, round2Answers, round1Questions, round2Questions) {
+function renderVoting(targetNumber, targetName, round1Answers, round2Answers, round1Questions, round2Questions, guessOptions = []) {
     document.getElementById('voting-title').textContent = `Evaluating P${targetNumber} — ${targetName}`;
 
     const r1El = document.getElementById('voting-r1-answers');
@@ -971,10 +1112,44 @@ function renderVoting(targetNumber, targetName, round1Answers, round2Answers, ro
         r2El.appendChild(div);
     });
 
-    // Reset stars
+    // Reset stars and liar guess
     document.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
     document.getElementById('rating-label').textContent = 'Tap to rate';
     document.getElementById('btn-submit-vote').disabled = true;
     document.getElementById('btn-submit-vote').textContent = 'Submit Vote';
     state.myVote = null;
+    state.myLiarGuess = null;
+
+    // Guess the liar options
+    const guessBox = document.getElementById('liar-guess-options');
+    if (guessBox) {
+        guessBox.innerHTML = '';
+
+        if (!guessOptions || guessOptions.length === 0) {
+            guessBox.innerHTML = '<p class="liar-guess-empty">No guess options available.</p>';
+        } else {
+            guessOptions.forEach(player => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'liar-guess-btn';
+                btn.textContent = `P${player.number} — ${player.name}`;
+
+                btn.addEventListener('click', () => {
+                    state.myLiarGuess = player.id;
+
+                    document.querySelectorAll('.liar-guess-btn').forEach(b => {
+                        b.classList.remove('selected');
+                    });
+
+                    btn.classList.add('selected');
+
+                    if (state.myVote !== null) {
+                        document.getElementById('btn-submit-vote').disabled = false;
+                    }
+                });
+
+                guessBox.appendChild(btn);
+            });
+        }
+    }
 }
