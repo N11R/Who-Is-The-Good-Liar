@@ -32,7 +32,7 @@ window.addEventListener('DOMContentLoaded', () => {
             document.getElementById('btn-create-game').disabled = !this.value.trim();
         });
 
-    // Setup — chip selectors (player count, R1/R2 question count)
+    // Setup — chip selectors
     document.querySelectorAll('.chip-select').forEach(group => {
         group.querySelectorAll('.chip').forEach(chip => {
             chip.addEventListener('click', () => {
@@ -57,7 +57,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const playerCount  = parseInt(document.querySelector('#select-players .chip.selected')?.dataset.value)      || 4;
             const round1Count  = parseInt(document.querySelector('#select-r1-questions .chip.selected')?.dataset.value) || 7;
             const round2Count  = parseInt(document.querySelector('#select-r2-questions .chip.selected')?.dataset.value) || 4;
-            const timerMinutes = parseInt(document.getElementById('timer-slider').value)                                 || 5;
+            const timerMinutes = parseInt(document.getElementById('timer-slider')?.value)                                || 5;
 
             state.playerName = name;
             state.socket.emit('create-room', {
@@ -69,8 +69,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // Join — enable submit when name + 4-char code filled
     ['join-name', 'join-code'].forEach(id => {
         document.getElementById(id)?.addEventListener('input', () => {
-            const name = document.getElementById('join-name').value.trim();
-            const code = document.getElementById('join-code').value.trim();
+            const name = document.getElementById('join-name')?.value.trim();
+            const code = document.getElementById('join-code')?.value.trim();
             document.getElementById('btn-join-submit').disabled = !(name && code.length === 4);
         });
     });
@@ -84,8 +84,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // Join — submit
     document.getElementById('btn-join-submit')
         ?.addEventListener('click', () => {
-            const name = document.getElementById('join-name').value.trim();
-            const code = document.getElementById('join-code').value.trim().toUpperCase();
+            const name = document.getElementById('join-name')?.value.trim();
+            const code = document.getElementById('join-code')?.value.trim().toUpperCase();
             if (!name || code.length !== 4) return;
             state.playerName = name;
             state.socket.emit('join-room', { name, code });
@@ -94,7 +94,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // Lobby — copy link
     document.getElementById('btn-copy-link')
         ?.addEventListener('click', () => {
-            navigator.clipboard?.writeText(document.getElementById('lobby-link').value);
+            navigator.clipboard?.writeText(document.getElementById('lobby-link')?.value);
             const toast = document.getElementById('copy-toast');
             if (toast) {
                 toast.classList.remove('hidden');
@@ -115,6 +115,17 @@ window.addEventListener('DOMContentLoaded', () => {
     // Round 2 — Done
     document.getElementById('btn-r2-done')
         ?.addEventListener('click', () => submitRound2());
+
+    // Round 2 — Hide / Show profile toggle
+    document.getElementById('btn-hide-profile')
+        ?.addEventListener('click', () => {
+            const profile = document.getElementById('r2-profile-answers');
+            const btn     = document.getElementById('btn-hide-profile');
+            if (!profile || !btn) return;
+            const isHidden = profile.style.display === 'none';
+            profile.style.display = isHidden ? '' : 'none';
+            btn.textContent = isHidden ? 'Hide Profile ▲' : 'Show Profile ▼';
+        });
 
     // Voting — star click
     document.getElementById('star-rating')
@@ -159,18 +170,20 @@ function submitRound1() {
     const answers = state.round1Questions.map((_, i) =>
         document.querySelector(`[data-index="${i}"]`)?.value.trim() || '(no answer)'
     );
-    stopCountdown();
     state.socket.emit('submit-round1', { answers, roomCode: state.roomCode });
     showScreen('screen-round1-wait');
+    // Restart countdown so wait screen timer keeps ticking
+    if (state.timerEnd) startCountdown(state.timerEnd, () => {});
 }
 
 function submitRound2() {
     const answers = state.round2Questions.map((_, i) =>
         document.querySelector(`[data-r2-index="${i}"]`)?.value.trim() || '(no answer)'
     );
-    stopCountdown();
     state.socket.emit('submit-round2', { answers, roomCode: state.roomCode });
     showScreen('screen-round2-wait');
+    // Restart countdown so wait screen timer keeps ticking
+    if (state.timerEnd) startCountdown(state.timerEnd, () => {});
 }
 
 function autoSubmit(phase) {
@@ -194,8 +207,8 @@ function renderLobby(room) {
             li.innerHTML = `
         <span class="player-avatar">${esc(p.name[0].toUpperCase())}</span>
         <span class="player-name">${esc(p.name)}</span>
-        ${p.id === room.hostId ? '<span class="host-tag">HOST</span>' : ''}
-        ${p.id === state.playerId ? '<span class="you-tag">YOU</span>' : ''}
+        ${p.id === room.hostId    ? '<span class="host-tag">HOST</span>' : ''}
+        ${p.id === state.playerId ? '<span class="you-tag">YOU</span>'   : ''}
       `;
             list.appendChild(li);
         });
@@ -236,20 +249,21 @@ function renderRound1(questions) {
             document.querySelector(`[data-index="${i}"]`)?.value.trim()
         ).length;
         const pct = Math.round((filled / questions.length) * 100);
-        const progEl = document.getElementById('r1-progress');
-        const fillEl = document.getElementById('r1-progress-fill');
+        const progEl  = document.getElementById('r1-progress');
+        const fillEl  = document.getElementById('r1-progress-fill');
         const doneBtn = document.getElementById('btn-r1-done');
-        if (progEl)  progEl.textContent   = `${filled} / ${questions.length} answered`;
-        if (fillEl)  fillEl.style.width   = `${pct}%`;
-        if (doneBtn) doneBtn.disabled     = filled < questions.length;
+        if (progEl)  progEl.textContent = `${filled} / ${questions.length} answered`;
+        if (fillEl)  fillEl.style.width = `${pct}%`;
+        if (doneBtn) doneBtn.disabled   = filled < questions.length;
     });
 }
 
 function renderRound2(assignedAnswers, round1Questions, round2Questions) {
-    // Show the mystery profile (no name)
+    // Mystery profile — no name shown
     const profileEl = document.getElementById('r2-profile-answers');
     if (profileEl) {
         profileEl.innerHTML = '';
+        profileEl.style.display = ''; // reset if it was hidden
         round1Questions.forEach((q, i) => {
             const div = document.createElement('div');
             div.className = 'profile-qa';
@@ -259,8 +273,11 @@ function renderRound2(assignedAnswers, round1Questions, round2Questions) {
             profileEl.appendChild(div);
         });
     }
+    // Reset hide button label
+    const hideBtn = document.getElementById('btn-hide-profile');
+    if (hideBtn) hideBtn.textContent = 'Hide Profile ▲';
 
-    // Render R2 questions
+    // R2 questions
     const container = document.getElementById('r2-questions');
     container.innerHTML = '';
     round2Questions.forEach((q, i) => {
@@ -290,7 +307,6 @@ function renderRound2(assignedAnswers, round1Questions, round2Questions) {
 }
 
 function renderVoting({ targetPlayerNumber, targetName, targetRound1, targetRound2, round1Questions, round2Questions, isBeingEvaluated, progress }) {
-    // Header
     document.getElementById('voting-title').textContent =
         `Evaluating P${targetPlayerNumber} — ${esc(targetName)}`;
 
@@ -310,17 +326,16 @@ function renderVoting({ targetPlayerNumber, targetName, targetRound1, targetRoun
     const activeEl = document.getElementById('voting-active');
 
     if (isBeingEvaluated) {
-        // Hot seat — hide voting UI
         if (lockedEl) lockedEl.classList.remove('hidden');
         if (activeEl) activeEl.style.display = 'none';
-        document.getElementById('voting-subtitle').textContent = "You're in the hot seat — sit tight";
+        const sub = document.getElementById('voting-subtitle');
+        if (sub) sub.textContent = "You're in the hot seat — sit tight";
     } else {
-        // Show voting UI
         if (lockedEl) lockedEl.classList.add('hidden');
         if (activeEl) activeEl.style.display = 'block';
-        document.getElementById('voting-subtitle').textContent = 'Rate how well the impersonator matched';
+        const sub = document.getElementById('voting-subtitle');
+        if (sub) sub.textContent = 'Rate how well the impersonator matched';
 
-        // R1 answers (their own real answers)
         const r1El = document.getElementById('voting-r1-answers');
         if (r1El) {
             r1El.innerHTML = '';
@@ -332,7 +347,6 @@ function renderVoting({ targetPlayerNumber, targetName, targetRound1, targetRoun
             });
         }
 
-        // R2 answers (impersonator's version — no name yet)
         const r2El = document.getElementById('voting-r2-answers');
         if (r2El) {
             r2El.innerHTML = '';
@@ -344,11 +358,12 @@ function renderVoting({ targetPlayerNumber, targetName, targetRound1, targetRoun
             });
         }
 
-        // Reset stars
         document.querySelectorAll('.star').forEach(s => s.classList.remove('active'));
-        document.getElementById('rating-label').textContent   = 'Tap to rate';
-        document.getElementById('btn-submit-vote').disabled   = true;
-        document.getElementById('btn-submit-vote').textContent = 'Submit Vote';
+        const ratingLabel = document.getElementById('rating-label');
+        const submitBtn   = document.getElementById('btn-submit-vote');
+        if (ratingLabel) ratingLabel.textContent   = 'Tap to rate';
+        if (submitBtn)   submitBtn.disabled        = true;
+        if (submitBtn)   submitBtn.textContent     = 'Submit Vote';
         state.myVote = null;
     }
 }
@@ -407,6 +422,8 @@ function renderReveal(players, round1Questions, round2Questions, identityMap, sc
 }
 
 function renderWinner(name, number, score) {
-    document.getElementById('winner-name').textContent  = `P${number} — ${esc(name)}`;
-    document.getElementById('winner-score').textContent = `${score.toFixed(1)} / 5`;
+    const nameEl  = document.getElementById('winner-name');
+    const scoreEl = document.getElementById('winner-score');
+    if (nameEl)  nameEl.textContent  = `P${number} — ${esc(name)}`;
+    if (scoreEl) scoreEl.textContent = `${score.toFixed(1)} / 5`;
 }

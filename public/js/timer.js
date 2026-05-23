@@ -1,53 +1,78 @@
 'use strict';
 
 // ─── TIMER ────────────────────────────────────────────────────────────────────
-// Updates every timer text element across ALL screens including wait screens
+const Timer = {
+    _interval:     null,
+    _onExpire:     null,
+    _totalSeconds: 0,
 
-function startCountdown(timerEnd, onExpire) {
-    stopCountdown();
+    start(timerEnd, onExpire) {
+        this.stop();
+        this._onExpire = onExpire;
 
-    function tick() {
-        const remaining = Math.max(0, Math.floor((timerEnd - Date.now()) / 1000));
-        const min = Math.floor(remaining / 60);
-        const sec = remaining % 60;
+        const tick = () => {
+            const remaining = Math.max(0, Math.floor((timerEnd - Date.now()) / 1000));
+            this._render(remaining);
+            if (remaining <= 0) {
+                this.stop();
+                if (this._onExpire) this._onExpire();
+            }
+        };
+
+        tick();
+        this._interval = setInterval(tick, 1000);
+    },
+
+    startWithBar(timerEnd, totalSeconds, onExpire) {
+        this._totalSeconds = totalSeconds;
+        this.start(timerEnd, onExpire);
+    },
+
+    stop() {
+        if (this._interval) {
+            clearInterval(this._interval);
+            this._interval = null;
+        }
+    },
+
+    _render(seconds) {
+        const min     = Math.floor(seconds / 60);
+        const sec     = seconds % 60;
         const display = `${min}:${sec.toString().padStart(2, '0')}`;
 
-        // Update every timer text on every screen
-        [
-            'r1-timer-text', 'r1-wait-timer-text',
-            'r2-timer-text', 'r2-wait-timer-text'
-        ].forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) return;
+        // Update every timer element on every screen — visible or hidden
+        document.querySelectorAll(
+            '#r1-timer-text, #r1-wait-timer-text, #r2-timer-text, #r2-wait-timer-text, .timer-display'
+        ).forEach(el => {
             el.textContent = display;
-            el.classList.toggle('timer-urgent', remaining <= 30);
+            el.classList.toggle('timer-urgent', seconds <= 30);
+            el.classList.toggle('timer-pulse',  seconds <= 10);
         });
 
-        // Drain fill bars
-        if (state.timerTotal > 0) {
-            const pct = Math.round((remaining / state.timerTotal) * 100);
-            [
-                'r1-timer-fill', 'r1-wait-timer-fill',
-                'r2-timer-fill', 'r2-wait-timer-fill'
-            ].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.style.width = `${pct}%`;
-            });
-        }
+        this._renderBar(seconds);
+    },
 
-        if (remaining <= 0) {
-            stopCountdown();
-            if (onExpire) onExpire();
-        }
-    }
+    _renderBar(remaining) {
+        if (!this._totalSeconds) return;
+        const pct = Math.round((remaining / this._totalSeconds) * 100);
 
-    tick();
-    state.timerInterval = setInterval(tick, 1000);
+        document.querySelectorAll(
+            '#r1-timer-fill, #r1-wait-timer-fill, #r2-timer-fill, #r2-wait-timer-fill, #timer-bar'
+        ).forEach(el => {
+            el.style.width = `${pct}%`;
+            if (pct > 50)      el.style.background = 'var(--teal)';
+            else if (pct > 20) el.style.background = 'var(--accent-warn, #f0a04d)';
+            else               el.style.background = 'var(--danger, #f04d4d)';
+        });
+    },
+};
+
+// ─── GLOBAL FUNCTIONS called by game.js ───────────────────────────────────────
+function startCountdown(timerEnd, onExpire) {
+    const totalSeconds = Math.round((timerEnd - Date.now()) / 1000);
+    Timer.startWithBar(timerEnd, totalSeconds, onExpire);
 }
 
 function stopCountdown() {
-    if (state.timerInterval) {
-        clearInterval(state.timerInterval);
-        state.timerInterval = null;
-    }
+    Timer.stop();
 }

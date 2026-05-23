@@ -2,20 +2,20 @@
 
 // ─── SHARED STATE ─────────────────────────────────────────────────────────────
 const state = {
-    socket:           null,
-    playerId:         null,
-    playerName:       null,
-    roomCode:         null,
-    isHost:           false,
-    timerInterval:    null,
-    timerEnd:         null,
-    timerTotal:       0,
-    round1Questions:  [],
-    round2Questions:  [],
-    assignedAnswers:  null,
+    socket:            null,
+    playerId:          null,
+    playerName:        null,
+    roomCode:          null,
+    isHost:            false,
+    timerInterval:     null,
+    timerEnd:          null,
+    timerTotal:        0,
+    round1Questions:   [],
+    round2Questions:   [],
+    assignedAnswers:   null,
     currentVoteTarget: null,
-    myVote:           null,
-    isBeingEvaluated: false,
+    myVote:            null,
+    isBeingEvaluated:  false,
 };
 
 // ─── BOOT ─────────────────────────────────────────────────────────────────────
@@ -28,7 +28,7 @@ window.addEventListener('DOMContentLoaded', () => {
 function connectSocket() {
     state.socket = io();
 
-    // Lobby
+    // ── Lobby ──────────────────────────────────────────────────────────────────
     state.socket.on('room-created', ({ code, playerId, settings }) => {
         state.playerId = playerId;
         state.roomCode = code;
@@ -48,7 +48,8 @@ function connectSocket() {
     state.socket.on('player-list-update', ({ room }) => renderLobby(room));
     state.socket.on('player-left',        ({ room }) => renderLobby(room));
 
-    // Round 1
+    // ── Round 1 ────────────────────────────────────────────────────────────────
+    // Start countdown — keep it running even after player submits and hits wait screen
     state.socket.on('game-started', ({ round1Questions, timerEnd, room }) => {
         state.round1Questions = round1Questions;
         state.timerEnd        = timerEnd;
@@ -63,14 +64,16 @@ function connectSocket() {
         setWaitProgress('r1', doneCount, totalCount);
     });
 
-    // Round 2
+    // ── Round 2 ────────────────────────────────────────────────────────────────
+    // Stop R1 countdown here (round is over), start R2 countdown
     state.socket.on('round2-start', ({ assignedAnswers, round1Questions, round2Questions, timerEnd }) => {
-        state.assignedAnswers  = assignedAnswers;
-        state.round2Questions  = round2Questions;
-        state.timerEnd         = timerEnd;
-        state.timerTotal       = Math.round((timerEnd - Date.now()) / 1000);
+        stopCountdown(); // R1 is done — stop that timer
+        state.assignedAnswers = assignedAnswers;
+        state.round2Questions = round2Questions;
+        state.timerEnd        = timerEnd;
+        state.timerTotal      = Math.round((timerEnd - Date.now()) / 1000);
         renderRound2(assignedAnswers, round1Questions, round2Questions);
-        startCountdown(timerEnd, () => autoSubmit('round2'));
+        startCountdown(timerEnd, () => autoSubmit('round2')); // R2 timer starts
         showScreen('screen-round2');
     });
 
@@ -78,33 +81,36 @@ function connectSocket() {
         setWaitProgress('r2', doneCount, totalCount);
     });
 
-    // Voting
+    // ── Voting ─────────────────────────────────────────────────────────────────
+    // R2 is done when voting starts — no timer needed in voting
     state.socket.on('voting-start', (data) => {
-        state.currentVoteTarget  = data.targetPlayerNumber;
-        state.isBeingEvaluated   = data.isBeingEvaluated;
+        stopCountdown(); // R2 is done — stop that timer
+        state.currentVoteTarget = data.targetPlayerNumber;
+        state.isBeingEvaluated  = data.isBeingEvaluated;
         state.myVote = null;
         renderVoting(data);
         showScreen('screen-voting');
     });
 
-    // Reveal
+    // ── Reveal ─────────────────────────────────────────────────────────────────
     state.socket.on('reveal-data', ({ players, round1Questions, round2Questions, identityMap, scores }) => {
         renderReveal(players, round1Questions, round2Questions, identityMap, scores);
         showScreen('screen-reveal');
     });
 
-    // Winner
+    // ── Winner ─────────────────────────────────────────────────────────────────
     state.socket.on('winner-data', ({ winnerName, winnerNumber, score }) => {
         renderWinner(winnerName, winnerNumber, score);
         showScreen('screen-winner');
     });
 
-    // Timer / Errors / Reset
+    // ── Timer expired (server forced the round to end) ─────────────────────────
     state.socket.on('timer-expired', ({ phase }) => {
         stopCountdown();
         autoSubmit(phase);
     });
 
+    // ── Errors / Reset ─────────────────────────────────────────────────────────
     state.socket.on('game-error', ({ message }) => showError(message));
 
     state.socket.on('game-reset', () => {
@@ -113,7 +119,7 @@ function connectSocket() {
     });
 }
 
-// ─── SHARED HELPERS ───────────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const el = document.getElementById(id);
@@ -131,6 +137,7 @@ function checkURLForRoomCode() {
     if (document.getElementById('btn-join-game')) document.getElementById('btn-join-game').style.display = 'none';
 }
 
+// Update wait screen player count + progress bar
 function setWaitProgress(prefix, done, total) {
     const countEl = document.getElementById(`${prefix}-wait-count`);
     const fillEl  = document.getElementById(`${prefix}-wait-progress-fill`);
